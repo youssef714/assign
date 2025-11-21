@@ -10,94 +10,105 @@ import kotlinx.coroutines.launch
 
 class MainActivity : AppCompatActivity() {
 
-    private lateinit var nameInput: EditText
-    private lateinit var phoneInput: EditText
-    private lateinit var categoryInput: EditText
-    private lateinit var addBtn: Button
-    private lateinit var showAllBtn: Button
-    private lateinit var filterBtn: Button
-    private lateinit var listView: ListView
-    private lateinit var spinner: Spinner
+    private lateinit var inputName: EditText
+    private lateinit var inputPhone: EditText
+    private lateinit var inputCategory: EditText
+    private lateinit var btnAdd: Button
+    private lateinit var btnShowAll: Button
+    private lateinit var btnFilter: Button
+    private lateinit var contactsList: ListView
+    private lateinit var categorySelector: Spinner
 
-    private lateinit var db: ContactDatabase
+    private lateinit var database: ContactDatabase
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
 
-        db = ContactDatabase.getDatabase(this)
+        database = ContactDatabase.getDatabase(this)
 
-        nameInput = findViewById(R.id.nameInput)
-        phoneInput = findViewById(R.id.phoneInput)
-        categoryInput = findViewById(R.id.categoryInput)
-        addBtn = findViewById(R.id.addBtn)
-        showAllBtn = findViewById(R.id.showAllBtn)
-        filterBtn = findViewById(R.id.filterBtn)
-        listView = findViewById(R.id.listView)
-        spinner = findViewById(R.id.categorySpinner)
+        initializeViews()
+        populateContacts()
+        refreshCategorySpinner()
 
-        loadAllContacts()
-        loadCategories()
+        btnAdd.setOnClickListener { handleAddContact() }
+        btnShowAll.setOnClickListener { populateContacts() }
+        btnFilter.setOnClickListener { filterBySelectedCategory() }
 
-        addBtn.setOnClickListener {
-            val name = nameInput.text.toString()
-            val phone = phoneInput.text.toString()
-            val category = categoryInput.text.toString()
-
-            if (name.isEmpty() || phone.isEmpty() || category.isEmpty()) {
-                Toast.makeText(this, "Fill all fields", Toast.LENGTH_SHORT).show()
-                return@setOnClickListener
-            }
-
-            lifecycleScope.launch {
-                db.contactDao().insert(Contact(name = name, phone = phone, category = category))
-                loadAllContacts()
-                loadCategories()
-            }
-        }
-
-        showAllBtn.setOnClickListener {
-            loadAllContacts()
-        }
-
-        filterBtn.setOnClickListener {
-            val selected = spinner.selectedItem?.toString()
-            if (selected != null) loadCategory(selected)
-        }
-
-        // Dialer on click
-        listView.setOnItemClickListener { _, _, position, _ ->
-            val contact = listView.adapter.getItem(position) as Contact
-            val intent = Intent(Intent.ACTION_DIAL)
-            intent.data = Uri.parse("tel:${contact.phone}")
-            startActivity(intent)
+        contactsList.setOnItemClickListener { _, _, position, _ ->
+            val chosen = contactsList.adapter.getItem(position) as Contact
+            openDialer(chosen.phone)
         }
     }
 
-    private fun loadAllContacts() {
+    private fun initializeViews() {
+        inputName = findViewById(R.id.nameInput)
+        inputPhone = findViewById(R.id.phoneInput)
+        inputCategory = findViewById(R.id.categoryInput)
+        btnAdd = findViewById(R.id.addBtn)
+        btnShowAll = findViewById(R.id.showAllBtn)
+        btnFilter = findViewById(R.id.filterBtn)
+        contactsList = findViewById(R.id.listView)
+        categorySelector = findViewById(R.id.categorySpinner)
+    }
+
+    private fun handleAddContact() {
+        val nameValue = inputName.text.toString().trim()
+        val phoneValue = inputPhone.text.toString().trim()
+        val categoryValue = inputCategory.text.toString().trim()
+
+        if (nameValue.isBlank() || phoneValue.isBlank() || categoryValue.isBlank()) {
+            Toast.makeText(this, "All fields are required", Toast.LENGTH_SHORT).show()
+            return
+        }
+
         lifecycleScope.launch {
-            val contacts = db.contactDao().getAllContacts()
-            listView.adapter = ContactAdapter(this@MainActivity, contacts)
+            database.contactDao().insert(
+                Contact(
+                    name = nameValue,
+                    phone = phoneValue,
+                    category = categoryValue
+                )
+            )
+            populateContacts()
+            refreshCategorySpinner()
         }
     }
 
-    private fun loadCategory(cat: String) {
+    private fun populateContacts() {
         lifecycleScope.launch {
-            val contacts = db.contactDao().getContactsByCategory(cat)
-            listView.adapter = ContactAdapter(this@MainActivity, contacts)
+            val allContacts = database.contactDao().getAllContacts()
+            contactsList.adapter = ContactAdapter(this@MainActivity, allContacts)
         }
     }
 
-    private fun loadCategories() {
+    private fun filterBySelectedCategory() {
+        val selectedCategory = categorySelector.selectedItem?.toString() ?: return
+
         lifecycleScope.launch {
-            val categories = db.contactDao().getCategories()
-            val adapter = ArrayAdapter(
+            val filtered = database.contactDao().getContactsByCategory(selectedCategory)
+            contactsList.adapter = ContactAdapter(this@MainActivity, filtered)
+        }
+    }
+
+    private fun refreshCategorySpinner() {
+        lifecycleScope.launch {
+            val cats = database.contactDao().getCategories()
+
+            val spinAdapter = ArrayAdapter(
                 this@MainActivity,
                 android.R.layout.simple_spinner_item,
-                categories
+                cats
             )
-            adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
-            spinner.adapter = adapter
+            spinAdapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
+            categorySelector.adapter = spinAdapter
         }
+    }
+
+    private fun openDialer(number: String) {
+        val dialIntent = Intent(Intent.ACTION_DIAL).apply {
+            data = Uri.parse("tel:$number")
+        }
+        startActivity(dialIntent)
     }
 }
